@@ -1,0 +1,50 @@
+on: [push]
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    
+    - uses: azure/docker-login@v1
+      with:
+        login-server: gustavacr01.azurecr.io
+        username: ${{ secrets.acr_gustavacr01_username }}
+        password: ${{ secrets.acr_gustavacr01_password }}
+    
+    - name: Build and push image to ACR
+      id: build-image
+      run: |
+        docker build "$GITHUB_WORKSPACE/aks-engine/deployment/windows" -f  "aks-engine/deployment/windows/Dockerfile" -t gustavacr01.azurecr.io/gustavaksteslax:${{ github.sha }} --label dockerfile-path=aks-engine/deployment/windows/Dockerfile
+        docker push gustavacr01.azurecr.io/gustavaksteslax:${{ github.sha }}
+    
+    - uses: azure/k8s-set-context@v1
+      with:
+         kubeconfig: ${{ secrets.aks_gustavaksteslax_kubeConfig }}
+      id: login
+    
+    - name: Create namespace
+      run: |
+        namespacePresent=`kubectl get namespace | grep gustav-aks-teslaxa5f0 | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+            echo `kubectl create namespace gustav-aks-teslaxa5f0`
+        fi
+
+    - uses: azure/k8s-create-secret@v1
+      with:
+        namespace: gustav-aks-teslaxa5f0
+        container-registry-url: gustavacr01.azurecr.io
+        container-registry-username: ${{ secrets.acr_gustavacr01_username }}
+        container-registry-password: ${{ secrets.acr_gustavacr01_password }}
+        secret-name: gustavakstesdockerauth
+       
+    - uses: azure/k8s-deploy@v1.2
+      with:
+        namespace: gustav-aks-teslaxa5f0
+        manifests: |
+          manifests/deployment.yml
+          manifests/service.yml
+        images: |
+          gustavacr01.azurecr.io/gustavaksteslax:${{ github.sha }}
+        imagepullsecrets: |
+          gustavakstesdockerauth
